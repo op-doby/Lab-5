@@ -1,175 +1,123 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <elf.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 
- extern int startup(int argc, char **argv, void (*start)());
-
-//e_phoff refers to the offset, in bytes, of the program
-// header table from the beginning of the file.
+extern int startup(int argc, char **argv, void (*start)()); // start the loaded program
 
 int foreach_phdr(void *map_start, void (*func)(Elf32_Phdr *, int), int arg) {
-    // Casting the start of the map to the ELF header
-    Elf32_Ehdr *elf_header = (Elf32_Ehdr *)map_start;
-    // Getting the program header table by adding the offset to the start of the map
-    Elf32_Phdr *program_header_table = (Elf32_Phdr *)(map_start + elf_header->e_phoff);
-    printf("Type\t\tOffset\t\tVirtAddr\tPhysAddr\tFileSiz\tMemSiz\tFlg\tAlign\n"); //title
-
-    // Looping through each entry in the program header table and calling the passed function on it
-    int ind=0;
-    while (ind < elf_header->e_phnum) {
-        func(program_header_table + ind, arg);
-        ind++;
-    }
-
+    Elf32_Ehdr *elfHeader = (Elf32_Ehdr *)map_start; // Points to the ELF header, which is at the start of the mapped memory
+    Elf32_Phdr *headerTable = (Elf32_Phdr *)(map_start + (*elfHeader).e_phoff); // Points to the program header table by adding the offset (e_phoff) to the start of the mapped memory
+    printf("Type\t\tOffset\t\tVirtAddr\tPhysAddr\tFileSiz\tMemSiz\tFlg\tAlign\n");
+    for(int i=0; i < (*elfHeader).e_phnum; i++) 
+        func(headerTable + i, arg);
     return 0;
 }
 
-
-//get information
-char* get_phdr_type(int type) {
-    switch (type) {
-        case PT_NULL:
-            return "NULL";
-        case PT_LOAD:
-            return "LOAD";
-        case PT_NOTE:
-            return "NOTE";
-        case PT_INTERP:
-            return "INTERP";
-        case PT_SHLIB:
-            return "SHLIB";
-        case PT_PHDR:
-            return "PHDR";
-        case PT_TLS:
-            return "TLS";
-        case PT_LOOS:
-            return "LOOS";
-        case PT_HIOS:
-            return "HIOS";
-        case PT_DYNAMIC:
-            return "DYNAMIC";
-        case PT_LOPROC:
-            return "LOPROC";
-        case PT_HIPROC:
-            return "HIPROC";
-        case PT_GNU_EH_FRAME:
-            return "GNU_EH_FRAME";
-        case PT_GNU_STACK:
-            return "GNU_STACK";
-        case PT_GNU_RELRO:
-            return "GNU_RELRO";
-        default:
-            return "UNKNOWN";
-    }
-}
-
-
-//get information
-char* get_phdr_flag_char(int flg){//get the flag char from the p_flags field of the program header
+char* getFlagChar(int flg){ // Returns a string representing the flag character based on the program header's flags
     switch (flg){
-        case 0x004: return "R";
-        case 0x005: return "R E";
-        case 0x006: return "RW";
-        case 0x007: return "RWE";
-        default:return "Unknown";
+        case 0x004: return "R"; // read permission
+        case 0x005: return "R E"; // read and execute permissions
+        case 0x006: return "RW"; // read and write permissions
+        case 0x007: return "RWE"; // read, write, and execute permissions
+        default: return "Unknown";
     }
 }
-//1 is read, 2 is write, 4 is execute
 
-
-
-
-
-//1b
-//get protection flags from the p_flags field of the program header
-int get_protection_flags(Elf32_Phdr *phdr){
-  int prot_flags = 0;
-  if (phdr->p_flags & PF_R) //PF_R is a flag that indicates read permission
-    prot_flags = prot_flags | PROT_READ;// 
-  if (phdr->p_flags & PF_X) //PF_X is a flag that indicates execute permission
-    prot_flags = prot_flags | PROT_EXEC;
-  if (phdr->p_flags & PF_W) //PF_W is a flag that indicates write permission
-    prot_flags = prot_flags | PROT_WRITE;
-  return prot_flags;
+char* getType(int type) {
+    switch (type) {
+        case PT_NULL: return "NULL";
+        case PT_LOAD: return "LOAD";
+        case PT_NOTE: return "NOTE";
+        case PT_LOPROC: return "LOPROC";
+        case PT_GNU_RELRO: return "GNU_RELRO";
+        case PT_SHLIB: return "SHLIB";
+        case PT_INTERP: return "INTERP";
+        case PT_PHDR: return "PHDR";
+        case PT_TLS: return "TLS";
+        case PT_LOOS: return "LOOS";
+        case PT_HIOS: return "HIOS";
+        case PT_DYNAMIC: return "DYNAMIC";
+        case PT_GNU_EH_FRAME: return "GNU_EH_FRAME";
+        case PT_HIPROC: return "HIPROC";
+        case PT_GNU_STACK: return "GNU_STACK";
+        default: return "UNKNOWN";
+    }
 }
 
-
-
-
-void print_prot_mmap_flags(Elf32_Phdr *phdr) {
-    int prot_flags = get_protection_flags(phdr);//get protection flags from the function above
-    int mmap_flags = (phdr->p_flags & PF_R) ? (MAP_PRIVATE) : MAP_SHARED;
-    printf( "----Protection flags:%d\n----Mapping flags:%d\n", prot_flags, mmap_flags);
+int getProtectionFlags(Elf32_Phdr *phdr){ // Returns protection flags for memory mapping based on the program header's flags.
+  int protectionFlags = 0;
+  if ((*phdr).p_flags & PF_R) // read permission
+    protectionFlags = protectionFlags | PROT_READ;
+  if ((*phdr).p_flags & PF_X) // execute permission
+    protectionFlags = protectionFlags | PROT_EXEC;
+  if ((*phdr).p_flags & PF_W) // write permission
+    protectionFlags = protectionFlags | PROT_WRITE;
+  return protectionFlags;
 }
-//1a
-// readelf -l
-void print_phdr_information(Elf32_Phdr *phdr, int i) {
+
+void printProtectionFlags(Elf32_Phdr *phdr) { // Prints the protection and mapping flags for a program header
+    int mmapFlags = ((*phdr).p_flags & PF_R) ? (MAP_PRIVATE) : MAP_SHARED;
+    int protectionFlags = getProtectionFlags(phdr);
+    printf("Protection Flags: %d, Mapping Flags: %d\n", protectionFlags, mmapFlags);
+}
+
+void printInformation(Elf32_Phdr *phdr, int i) { // Prints detailed information about a program header like readelf -l
   printf("%-13.13s\t%#08x\t%#08x\t%#08x\t%#06x\t%#06x\t%s\t%#06x\n",
-    get_phdr_type(phdr->p_type),
-    phdr->p_offset,
-    phdr->p_vaddr,
-    phdr->p_paddr,
-    phdr->p_filesz,
-    phdr->p_memsz,
-    get_phdr_flag_char(phdr->p_flags),
-    phdr->p_align);
-  print_prot_mmap_flags(phdr);
+    getType((*phdr).p_type), (*phdr).p_offset, (*phdr).p_vaddr, (*phdr).p_paddr, (*phdr).p_filesz, (*phdr).p_memsz, getFlagChar((*phdr).p_flags), (*phdr).p_align);
+  printProtectionFlags(phdr);
 }
-
-
 
 int openFile(char* fileName){
-  int fileDes = open(fileName, O_RDONLY);
-  if(fileDes < 0) {
-    perror("fail - cannot open file");
-    exit(EXIT_FAILURE);
+  int fileDescriptor = open(fileName, O_RDONLY);
+  if(fileDescriptor < 0) {
+    perror("ERROR: cannot open file");
+    exit(1);
   }
-  return fileDes;
+  return fileDescriptor;
 }
 
-//2b
-void load_phdr(Elf32_Phdr *phdr, int fd) {
-  print_phdr_information(phdr, 0);//print the information of the program header
-  void *map_start;//the start of the map
-  if (phdr->p_type == PT_LOAD) {//if the type of the program header is PT_LOAD
-    void *vaddr = (void*) (phdr->p_vaddr & 0xfffff000);//get the virtual address
-    int offset = phdr->p_offset & 0xfffff000;//get the offset
-    int padding = phdr->p_vaddr & 0xfff;//get the padding
-    map_start = mmap(vaddr, phdr->p_memsz + padding, get_protection_flags(phdr), MAP_PRIVATE | MAP_FIXED, fd ,offset);//map the file to memory
+void load_phdr(Elf32_Phdr *phdr, int fd) { // Maps a program header segment to memory
+  printInformation(phdr, 0);
+  void *map_start;
+  if ((*phdr).p_type == PT_LOAD) 
+  {
+    void *vaddr = (void*) ((*phdr).p_vaddr & 0xfffff000); 
+    int offset = (*phdr).p_offset & 0xfffff000; 
+    int padding = (*phdr).p_vaddr & 0xfff;
+    map_start = mmap(vaddr, (*phdr).p_memsz + padding, getProtectionFlags(phdr), MAP_PRIVATE | MAP_FIXED, fd ,offset);
     if (map_start == MAP_FAILED) {
-      perror("mmap failed");
-      exit(1);
+        perror("ERROR: mmap failed");
+        exit(1);
     }
   }
 }
-// 
-int getFileSize(int fileDes){
-  int size = lseek(fileDes, 0, SEEK_END);
-  lseek(fileDes, 0, SEEK_SET);
+
+int getFileSize(int fileDescriptor){
+  int size = lseek(fileDescriptor, 0, SEEK_END);
+  lseek(fileDescriptor, 0, SEEK_SET); // Moves the file offset to the end to get the file size, then resets it to the start
   return size;
 }
 
 int main(int argc, char **argv) {
   void *map_start;
-  if (argc < 2){
-    printf("there is no file name in the arguments\n");//
-    return 1;
+  if (argc <= 1){
+    printf("No file name is provided\n");//
+    exit(1);
   }
-  int fileDes = openFile(argv[1]);// open the file
-  int fileDesSize = getFileSize(fileDes);
-  map_start = mmap(0, fileDesSize, PROT_READ, MAP_PRIVATE, fileDes, 0);// map the file to memory 
+  int fileDescriptor = openFile(argv[1]);
+  int fileDescriptorSize = getFileSize(fileDescriptor);
+  map_start = mmap(0, fileDescriptorSize, PROT_READ, MAP_PRIVATE, fileDescriptor, 0);
   if (map_start == MAP_FAILED) {
-    printf("fail - mmap \n");
-    return 1;
+    printf("ERROR: mmap failed\n");
+    exit(1);
   }
-  //foreach_phdr(map_start, &print_phdr_information, fileDes); //task 0 (+1ab)
-  Elf32_Ehdr *elf_head = (Elf32_Ehdr *) map_start;
-  foreach_phdr(map_start, &load_phdr, fileDes); //
-  startup(argc-1, argv+1, (void *)(elf_head->e_entry));//this function is in task does the same as the command line
-  close(fileDes);
-  return 0;
+  Elf32_Ehdr *elfHeader = (Elf32_Ehdr *) map_start;
+  foreach_phdr(map_start, &load_phdr, fileDescriptor); 
+  startup(argc-1, argv+1, (void *)((*elfHeader).e_entry));//this function is in task does the same as the command line
+  close(fileDescriptor);
+  exit(0);
 }
