@@ -96,6 +96,7 @@ void load_phdr(Elf32_Phdr *phdr, int fd) { // Maps a program header segment to m
   }
 }
 
+
 int getFileSize(int fileDescriptor){
   int size = lseek(fileDescriptor, 0, SEEK_END);
   lseek(fileDescriptor, 0, SEEK_SET); // Moves the file offset to the end to get the file size, then resets it to the start
